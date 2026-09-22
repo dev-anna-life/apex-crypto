@@ -2,6 +2,14 @@ import React, { useState, useEffect, useRef } from 'react'
 
 const TIMEFRAMES = ['1H', '24H', '7D', '1M', '1Y']
 
+const SWAP_TOKENS = [
+  { symbol: 'BTC', name: 'Bitcoin', icon: 'BTC', price: 64820.50 },
+  { symbol: 'ETH', name: 'Ethereum', icon: 'ETH', price: 3480.25 },
+  { symbol: 'SOL', name: 'Solana', icon: 'SOL', price: 152.80 },
+  { symbol: 'BNB', name: 'BNB', icon: 'BNB', price: 588.40 },
+  { symbol: 'USDT', name: 'Tether USD', icon: 'USDT', price: 1.00 }
+]
+
 const INITIAL_ASSETS = [
   {
     id: 'bitcoin',
@@ -269,15 +277,18 @@ function formatCurrency(num) {
 }
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('terminal')
   const [assets, setAssets] = useState(INITIAL_ASSETS)
   const [activeId, setActiveId] = useState('bitcoin')
   const [activeTimeframe, setActiveTimeframe] = useState('24H')
   const [scrubIndex, setScrubIndex] = useState(null)
   const [priceFlash, setPriceFlash] = useState(null)
 
-  const [isInvestModalOpen, setIsInvestModalOpen] = useState(false)
-  const [investAmount, setInvestAmount] = useState(500)
-  const [investStep, setInvestStep] = useState('input')
+  const [fromSymbol, setFromSymbol] = useState('ETH')
+  const [toSymbol, setToSymbol] = useState('SOL')
+  const [fromAmount, setFromAmount] = useState('1')
+  const [isRotating, setIsRotating] = useState(false)
+  const [swapState, setSwapState] = useState('idle')
   const [recentTransactions, setRecentTransactions] = useState([])
 
   const svgRef = useRef(null)
@@ -386,37 +397,55 @@ export default function App() {
     }, 2000)
   }
 
-  const estimatedCryptoUnits = Number((Number(investAmount) / activeAsset.price).toFixed(4))
+  function getTokenPrice(sym) {
+    const found = assets.find(a => a.symbol === sym)
+    if (found) return found.price
+    if (sym === 'USDT') return 1.00
+    return 1.00
+  }
 
-  function handleConfirmInvest() {
-    setInvestStep('processing')
+  const fromTokenPrice = getTokenPrice(fromSymbol)
+  const toTokenPrice = getTokenPrice(toSymbol)
+  const exchangeRate = fromTokenPrice / toTokenPrice
+  const toAmount = (Number(fromAmount || 0) * exchangeRate).toFixed(4)
+  const fromValueUsd = Number(fromAmount || 0) * fromTokenPrice
+  const toValueUsd = Number(toAmount || 0) * toTokenPrice
+
+  function handleFlipTokens() {
+    setIsRotating(true)
+    const prevFrom = fromSymbol
+    setFromSymbol(toSymbol)
+    setToSymbol(prevFrom)
+    setTimeout(() => setIsRotating(false), 300)
+  }
+
+  function handleExecuteSwap() {
+    if (!Number(fromAmount) || Number(fromAmount) <= 0) return
+    setSwapState('swapping')
+
     setTimeout(() => {
       setAssets(prev => prev.map(coin => {
-        if (coin.id !== activeAsset.id) return coin
-        return {
-          ...coin,
-          holdings: Number((coin.holdings + estimatedCryptoUnits).toFixed(4))
+        if (coin.symbol === fromSymbol) {
+          return { ...coin, holdings: Math.max(0, Number((coin.holdings - Number(fromAmount)).toFixed(4))) }
         }
+        if (coin.symbol === toSymbol) {
+          return { ...coin, holdings: Number((coin.holdings + Number(toAmount)).toFixed(4)) }
+        }
+        return coin
       }))
 
       setRecentTransactions(prev => [
         {
           id: Date.now(),
-          type: 'Buy',
-          coin: activeAsset.name,
-          symbol: activeAsset.symbol,
-          amountUSD: Number(investAmount),
-          units: estimatedCryptoUnits,
+          type: 'Swap',
+          desc: `Swapped ${fromAmount} ${fromSymbol} for ${toAmount} ${toSymbol}`,
           time: 'Just now'
         },
         ...prev.slice(0, 2)
       ])
 
-      setInvestStep('success')
-      setTimeout(() => {
-        setIsInvestModalOpen(false)
-        setInvestStep('input')
-      }, 1600)
+      setSwapState('success')
+      setTimeout(() => setSwapState('idle'), 2000)
     }, 900)
   }
 
@@ -438,323 +467,324 @@ export default function App() {
           </div>
         </header>
 
-        <section className="bg-slate-900/90 border border-white/10 rounded-3xl p-5 backdrop-blur-xl shadow-xl flex items-center justify-between relative overflow-hidden">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Portfolio Balance</span>
-            <div className="text-2xl font-extrabold text-white tracking-tight tabular-nums">
-              {formatCurrency(totalPortfolioBalance)}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 mt-0.5">
-              <span>▲</span>
-              <span>+{formatCurrency(total24hProfit)}</span>
-              <span className="text-slate-500 font-normal">•</span>
-              <span className="text-emerald-400/90">+3.40% Today</span>
-            </div>
-          </div>
+        <div className="bg-slate-950/70 p-1.5 rounded-2xl border border-white/5 flex gap-1.5 w-full">
+          <button
+            onClick={() => setActiveTab('terminal')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === 'terminal'
+                ? 'bg-slate-800 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Market Terminal
+          </button>
+          <button
+            onClick={() => setActiveTab('swap')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === 'swap'
+                ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30 shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Instant Swap (DEX)
+          </button>
+        </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setInvestStep('input')
-                setIsInvestModalOpen(true)
-              }}
-              className="bg-gradient-to-r from-sky-400 to-sky-600 hover:from-sky-300 hover:to-sky-500 text-[#07090e] font-black text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-sky-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
-            >
-              Invest / Buy
-            </button>
-          </div>
-        </section>
+        {activeTab === 'terminal' && (
+          <>
+            <section className="bg-slate-900/80 border border-white/10 rounded-3xl p-6 backdrop-blur-xl shadow-2xl relative overflow-hidden flex flex-col gap-4">
+              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent"></div>
 
-        <section className="bg-slate-900/80 border border-white/10 rounded-3xl p-6 backdrop-blur-xl shadow-2xl relative overflow-hidden flex flex-col gap-4">
-          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent"></div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-sm font-bold tracking-wider text-slate-200">
+                    {activeAsset.icon}
+                  </div>
+                  <div>
+                    <h1 className="text-base font-bold text-white leading-tight">{activeAsset.name}</h1>
+                    <p className="text-xs font-medium text-slate-400">{activeAsset.symbol} / USD</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="hidden sm:flex flex-col items-end">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Your Holding</span>
+                    <span className="text-xs font-bold text-slate-200 tabular-nums">
+                      {activeAsset.holdings.toFixed(4)} {activeAsset.symbol}
+                    </span>
+                  </div>
+                  <div className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 transition-colors ${themeBg} ${themeText} ${themeBorder}`}>
+                    <span>{isPositive ? '▲' : '▼'}</span>
+                    <span>{isPositive ? '+' : '-'}{Math.abs(currentTfData.change).toFixed(2)}%</span>
+                  </div>
+                </div>
+              </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-sm font-bold tracking-wider text-slate-200">
-                {activeAsset.icon}
+              <div className="flex items-end justify-between">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    {activeHoverPoint ? `Price at ${activeHoverPoint.time}` : 'Live Market Price'}
+                  </span>
+                  <div className={`text-4xl font-extrabold tracking-tight tabular-nums transition-colors duration-200 ${
+                    activeHoverPoint 
+                      ? themeText
+                      : priceFlash === 'up' ? 'text-emerald-400' : priceFlash === 'down' ? 'text-rose-400' : 'text-white'
+                  }`}>
+                    {formatCurrency(displayPrice)}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-white/5">
+                  {TIMEFRAMES.map(tf => {
+                    const isTfActive = activeTimeframe === tf
+                    return (
+                      <button
+                        key={tf}
+                        onClick={() => {
+                          setActiveTimeframe(tf)
+                          setScrubIndex(null)
+                        }}
+                        className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                          isTfActive
+                            ? `${themeBg} ${themeText} ${themeBorder} border shadow-sm`
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {tf}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-              <div>
-                <h1 className="text-base font-bold text-white leading-tight">{activeAsset.name}</h1>
-                <p className="text-xs font-medium text-slate-400">{activeAsset.symbol} / USD</p>
+
+              <div 
+                className="w-full h-32 my-1 relative cursor-crosshair select-none touch-none"
+                onMouseMove={e => handleScrub(e.clientX)}
+                onMouseLeave={() => setScrubIndex(null)}
+                onTouchMove={e => {
+                  if (e.touches[0]) handleScrub(e.touches[0].clientX)
+                }}
+                onTouchEnd={handleTouchEnd}
+              >
+                <svg 
+                  ref={svgRef}
+                  className="w-full h-full overflow-visible" 
+                  viewBox={`0 0 ${svgWidth} ${svgHeight}`} 
+                  preserveAspectRatio="none"
+                >
+                  <defs>
+                    <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={themeColor} stopOpacity="0.32" />
+                      <stop offset="100%" stopColor={themeColor} stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  <path d={areaD} fill="url(#chartGrad)" />
+                  <path d={pathD} fill="none" stroke={themeColor} strokeWidth="2.5" strokeLinecap="round" />
+
+                  {activeHoverPoint && (
+                    <g>
+                      <line 
+                        x1={activeHoverPoint.x} 
+                        y1="0" 
+                        x2={activeHoverPoint.x} 
+                        y2={svgHeight} 
+                        stroke={themeColor} 
+                        strokeWidth="1.5" 
+                        strokeDasharray="3 3" 
+                        opacity="0.85"
+                      />
+                      <circle 
+                        cx={activeHoverPoint.x} 
+                        cy={activeHoverPoint.y} 
+                        r="5.5" 
+                        fill={themeColor} 
+                        stroke="#07090e" 
+                        strokeWidth="2.5" 
+                      />
+                    </g>
+                  )}
+                </svg>
+
+                {activeHoverPoint && (
+                  <div 
+                    className={`absolute -top-3 -translate-x-1/2 pointer-events-none bg-slate-950/95 border ${themeBorder} ${themeText} text-[11px] font-bold px-2.5 py-0.5 rounded-md shadow-xl whitespace-nowrap`}
+                    style={{ 
+                      left: `${(activeHoverPoint.x / svgWidth) * 100}%` 
+                    }}
+                  >
+                    {activeHoverPoint.time}: {formatCurrency(activeHoverPoint.price)}
+                  </div>
+                )}
               </div>
+
+              <div className="grid grid-cols-3 gap-2 pt-3.5 border-t border-white/5">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">24h High</span>
+                  <span className="text-xs font-bold text-slate-200 tabular-nums">{formatCurrency(activeAsset.high)}</span>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">24h Low</span>
+                  <span className="text-xs font-bold text-slate-200 tabular-nums">{formatCurrency(activeAsset.low)}</span>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">Market Cap</span>
+                  <span className="text-xs font-bold text-slate-200">{activeAsset.cap}</span>
+                </div>
+              </div>
+            </section>
+
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">
+              Trending Markets
             </div>
-            <div className="flex items-center gap-2">
-              <div className="hidden sm:flex flex-col items-end">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Your Position</span>
-                <span className="text-xs font-bold text-slate-200 tabular-nums">
-                  {activeAsset.holdings.toFixed(4)} {activeAsset.symbol} ({formatCurrency(activeAssetHoldingValue)})
-                </span>
-              </div>
-              <div className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 transition-colors ${themeBg} ${themeText} ${themeBorder}`}>
-                <span>{isPositive ? '▲' : '▼'}</span>
-                <span>{isPositive ? '+' : '-'}{Math.abs(currentTfData.change).toFixed(2)}%</span>
-              </div>
-            </div>
-          </div>
 
-          <div className="flex items-end justify-between">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                {activeHoverPoint ? `Price at ${activeHoverPoint.time}` : 'Live Market Price'}
-              </span>
-              <div className={`text-4xl font-extrabold tracking-tight tabular-nums transition-colors duration-200 ${
-                activeHoverPoint 
-                  ? themeText
-                  : priceFlash === 'up' ? 'text-emerald-400' : priceFlash === 'down' ? 'text-rose-400' : 'text-white'
-              }`}>
-                {formatCurrency(displayPrice)}
-              </div>
-            </div>
+            <div className="flex flex-col gap-2">
+              {assets.map(coin => {
+                const coin24H = coin.timeframes['24H']
+                const coinPositive = coin24H.change >= 0
+                const isActive = coin.id === activeId
 
-            <div className="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-white/5">
-              {TIMEFRAMES.map(tf => {
-                const isTfActive = activeTimeframe === tf
                 return (
-                  <button
-                    key={tf}
+                  <div
+                    key={coin.id}
                     onClick={() => {
-                      setActiveTimeframe(tf)
+                      setActiveId(coin.id)
                       setScrubIndex(null)
                     }}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
-                      isTfActive
-                        ? `${themeBg} ${themeText} ${themeBorder} border shadow-sm`
-                        : 'text-slate-400 hover:text-white'
+                    className={`p-3.5 rounded-2xl border transition-all duration-200 flex items-center justify-between cursor-pointer ${
+                      isActive 
+                        ? `${coinPositive ? 'border-emerald-500/40' : 'border-rose-500/40'} bg-slate-800/90 shadow-lg` 
+                        : 'bg-slate-900/60 border-white/5 hover:border-white/15 hover:bg-slate-800/50'
                     }`}
                   >
-                    {tf}
-                  </button>
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-xs font-bold text-slate-200">
+                        {coin.icon}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-white">{coin.name}</div>
+                        <div className="text-[11px] font-semibold text-slate-400">{coin.symbol}</div>
+                      </div>
+                    </div>
+                    <div className="text-right flex flex-col gap-0.5">
+                      <div className="text-sm font-bold text-white tabular-nums">{formatCurrency(coin.price)}</div>
+                      <div className={`text-xs font-bold flex items-center justify-end gap-0.5 ${coinPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <span>{coinPositive ? '▲' : '▼'}</span>
+                        <span>{coinPositive ? '+' : '-'}{Math.abs(coin24H.change).toFixed(2)}%</span>
+                      </div>
+                    </div>
+                  </div>
                 )
               })}
             </div>
-          </div>
+          </>
+        )}
 
-          <div 
-            className="w-full h-32 my-1 relative cursor-crosshair select-none touch-none"
-            onMouseMove={e => handleScrub(e.clientX)}
-            onMouseLeave={() => setScrubIndex(null)}
-            onTouchMove={e => {
-              if (e.touches[0]) handleScrub(e.touches[0].clientX)
-            }}
-            onTouchEnd={handleTouchEnd}
-          >
-            <svg 
-              ref={svgRef}
-              className="w-full h-full overflow-visible" 
-              viewBox={`0 0 ${svgWidth} ${svgHeight}`} 
-              preserveAspectRatio="none"
-            >
-              <defs>
-                <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={themeColor} stopOpacity="0.32" />
-                  <stop offset="100%" stopColor={themeColor} stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path d={areaD} fill="url(#chartGrad)" />
-              <path d={pathD} fill="none" stroke={themeColor} strokeWidth="2.5" strokeLinecap="round" />
-
-              {activeHoverPoint && (
-                <g>
-                  <line 
-                    x1={activeHoverPoint.x} 
-                    y1="0" 
-                    x2={activeHoverPoint.x} 
-                    y2={svgHeight} 
-                    stroke={themeColor} 
-                    strokeWidth="1.5" 
-                    strokeDasharray="3 3" 
-                    opacity="0.85"
-                  />
-                  <circle 
-                    cx={activeHoverPoint.x} 
-                    cy={activeHoverPoint.y} 
-                    r="5.5" 
-                    fill={themeColor} 
-                    stroke="#07090e" 
-                    strokeWidth="2.5" 
-                  />
-                </g>
-              )}
-            </svg>
-
-            {activeHoverPoint && (
-              <div 
-                className={`absolute -top-3 -translate-x-1/2 pointer-events-none bg-slate-950/95 border ${themeBorder} ${themeText} text-[11px] font-bold px-2.5 py-0.5 rounded-md shadow-xl whitespace-nowrap`}
-                style={{ 
-                  left: `${(activeHoverPoint.x / svgWidth) * 100}%` 
-                }}
-              >
-                {activeHoverPoint.time}: {formatCurrency(activeHoverPoint.price)}
+        {activeTab === 'swap' && (
+          <section className="bg-slate-900/90 border border-white/10 rounded-3xl p-6 backdrop-blur-xl shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <div>
+                <h2 className="text-base font-bold text-white">Instant DEX Swap</h2>
+                <p className="text-xs text-slate-400">Decentralized spot execution with live rates</p>
               </div>
-            )}
-          </div>
+              <div className="text-[11px] font-bold text-sky-400 bg-sky-500/10 px-2.5 py-1 rounded-lg border border-sky-500/20">
+                0% Protocol Fee
+              </div>
+            </div>
 
-          <div className="grid grid-cols-3 gap-2 pt-3.5 border-t border-white/5">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">24h High</span>
-              <span className="text-xs font-bold text-slate-200 tabular-nums">{formatCurrency(activeAsset.high)}</span>
+            <div className="bg-slate-950/70 border border-white/5 rounded-2xl p-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
+                <span>You Pay</span>
+                <span>Balance: {assets.find(a => a.symbol === fromSymbol)?.holdings.toFixed(4) ?? '0.0000'} {fromSymbol}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <input
+                  type="number"
+                  value={fromAmount}
+                  onChange={e => setFromAmount(e.target.value)}
+                  placeholder="0.0"
+                  className="w-full bg-transparent text-3xl font-extrabold text-white focus:outline-none tabular-nums"
+                />
+                <select
+                  value={fromSymbol}
+                  onChange={e => setFromSymbol(e.target.value)}
+                  className="bg-slate-800 text-white font-bold text-xs px-3 py-2 rounded-xl border border-white/10 focus:outline-none"
+                >
+                  {SWAP_TOKENS.map(t => (
+                    <option key={t.symbol} value={t.symbol}>{t.symbol}</option>
+                  ))}
+                </select>
+              </div>
+              <span className="text-[11px] text-slate-500 font-medium">≈ {formatCurrency(fromValueUsd)}</span>
             </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">24h Low</span>
-              <span className="text-xs font-bold text-slate-200 tabular-nums">{formatCurrency(activeAsset.low)}</span>
+
+            <div className="flex justify-center -my-2 relative z-10">
+              <button
+                onClick={handleFlipTokens}
+                className={`w-9 h-9 rounded-full bg-slate-800 border border-white/15 text-sky-400 hover:text-white flex items-center justify-center shadow-lg transition-transform duration-300 ${
+                  isRotating ? 'rotate-180' : ''
+                }`}
+              >
+                ⇅
+              </button>
             </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider">Market Cap</span>
-              <span className="text-xs font-bold text-slate-200">{activeAsset.cap}</span>
+
+            <div className="bg-slate-950/70 border border-white/5 rounded-2xl p-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
+                <span>You Receive (Estimated)</span>
+                <span>Balance: {assets.find(a => a.symbol === toSymbol)?.holdings.toFixed(4) ?? '0.0000'} {toSymbol}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="w-full text-3xl font-extrabold text-emerald-400 tabular-nums">
+                  {toAmount}
+                </div>
+                <select
+                  value={toSymbol}
+                  onChange={e => setToSymbol(e.target.value)}
+                  className="bg-slate-800 text-white font-bold text-xs px-3 py-2 rounded-xl border border-white/10 focus:outline-none"
+                >
+                  {SWAP_TOKENS.map(t => (
+                    <option key={t.symbol} value={t.symbol}>{t.symbol}</option>
+                  ))}
+                </select>
+              </div>
+              <span className="text-[11px] text-slate-500 font-medium">≈ {formatCurrency(toValueUsd)}</span>
             </div>
-          </div>
-        </section>
+
+            <div className="bg-slate-950/40 border border-white/5 rounded-xl p-3 flex flex-col gap-1.5 text-xs text-slate-400">
+              <div className="flex justify-between">
+                <span>Exchange Rate</span>
+                <span className="font-semibold text-slate-200">1 {fromSymbol} = {exchangeRate.toFixed(4)} {toSymbol}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Network Gas</span>
+                <span className="font-semibold text-slate-200">~$1.85 (Fast)</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Price Impact</span>
+                <span className="font-semibold text-emerald-400">&lt; 0.01%</span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleExecuteSwap}
+              disabled={swapState === 'swapping'}
+              className="w-full bg-gradient-to-r from-sky-400 to-sky-600 hover:from-sky-300 hover:to-sky-500 text-[#07090e] font-black text-sm py-4 rounded-2xl shadow-lg shadow-sky-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+            >
+              {swapState === 'swapping' ? 'Routing Liquidity Pools...' : swapState === 'success' ? 'Swap Completed!' : `Swap ${fromSymbol} to ${toSymbol}`}
+            </button>
+          </section>
+        )}
 
         {recentTransactions.length > 0 && (
           <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-3.5 flex items-center justify-between text-xs">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-sky-400"></span>
               <span className="text-slate-400">Recent:</span>
-              <span className="font-bold text-white">
-                Bought {recentTransactions[0].units} {recentTransactions[0].symbol} ({formatCurrency(recentTransactions[0].amountUSD)})
-              </span>
+              <span className="font-bold text-white">{recentTransactions[0].desc}</span>
             </div>
             <span className="text-slate-500 font-semibold">{recentTransactions[0].time}</span>
           </div>
         )}
-
-        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">
-          Your Investment Portfolio
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {assets.map(coin => {
-            const coin24H = coin.timeframes['24H']
-            const coinPositive = coin24H.change >= 0
-            const isActive = coin.id === activeId
-            const coinHoldingValue = coin.holdings * coin.price
-
-            return (
-              <div
-                key={coin.id}
-                onClick={() => {
-                  setActiveId(coin.id)
-                  setScrubIndex(null)
-                }}
-                className={`p-3.5 rounded-2xl border transition-all duration-200 flex items-center justify-between cursor-pointer ${
-                  isActive 
-                    ? `${coinPositive ? 'border-emerald-500/40' : 'border-rose-500/40'} bg-slate-800/90 shadow-lg` 
-                    : 'bg-slate-900/60 border-white/5 hover:border-white/15 hover:bg-slate-800/50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-xs font-bold text-slate-200">
-                    {coin.icon}
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-white">{coin.name}</div>
-                    <div className="text-[11px] font-semibold text-sky-400/90">
-                      {coin.holdings.toFixed(4)} {coin.symbol} <span className="text-slate-500">({formatCurrency(coinHoldingValue)})</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right flex flex-col gap-0.5">
-                  <div className="text-sm font-bold text-white tabular-nums">{formatCurrency(coin.price)}</div>
-                  <div className={`text-xs font-bold flex items-center justify-end gap-0.5 ${coinPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    <span>{coinPositive ? '▲' : '▼'}</span>
-                    <span>{coinPositive ? '+' : '-'}{Math.abs(coin24H.change).toFixed(2)}%</span>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
       </div>
-
-      {isInvestModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-white/15 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col gap-4 relative">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xs font-bold text-slate-200">
-                  {activeAsset.icon}
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">Invest in {activeAsset.name}</h3>
-                  <p className="text-[11px] text-slate-400">Current: {formatCurrency(activeAsset.price)}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsInvestModalOpen(false)}
-                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-colors"
-              >
-                ×
-              </button>
-            </div>
-
-            {investStep === 'input' && (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Investment Amount (USD)</span>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-bold text-slate-400">$</span>
-                    <input
-                      type="number"
-                      value={investAmount}
-                      onChange={e => setInvestAmount(e.target.value)}
-                      className="w-full bg-slate-950/80 border border-white/15 rounded-2xl py-3 pl-8 pr-4 text-xl font-bold text-white focus:outline-none focus:border-sky-500/50 tabular-nums"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-4 gap-2">
-                  {[100, 250, 500, 1000].map(amt => (
-                    <button
-                      key={amt}
-                      onClick={() => setInvestAmount(amt)}
-                      className={`py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                        Number(investAmount) === amt
-                          ? 'bg-sky-500/20 text-sky-400 border-sky-500/40'
-                          : 'bg-white/5 text-slate-400 border-white/5 hover:text-white'
-                      }`}
-                    >
-                      ${amt}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="bg-slate-950/60 border border-white/5 rounded-2xl p-3.5 flex items-center justify-between text-xs">
-                  <span className="text-slate-400">Estimated Allocation</span>
-                  <span className="font-bold text-white tabular-nums">
-                    ≈ {estimatedCryptoUnits} {activeAsset.symbol}
-                  </span>
-                </div>
-
-                <button
-                  onClick={handleConfirmInvest}
-                  className="w-full bg-gradient-to-r from-sky-400 to-sky-600 hover:from-sky-300 hover:to-sky-500 text-[#07090e] font-black text-sm py-3.5 rounded-2xl shadow-lg shadow-sky-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] mt-1"
-                >
-                  Confirm Investment
-                </button>
-              </>
-            )}
-
-            {investStep === 'processing' && (
-              <div className="py-10 flex flex-col items-center justify-center gap-3">
-                <div className="w-10 h-10 border-3 border-sky-400/20 border-t-sky-400 rounded-full animate-spin"></div>
-                <p className="text-xs font-bold text-slate-300">Processing Investment...</p>
-              </div>
-            )}
-
-            {investStep === 'success' && (
-              <div className="py-8 flex flex-col items-center justify-center gap-2.5 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-xl font-bold">
-                  ✓
-                </div>
-                <h4 className="text-sm font-bold text-white">Investment Confirmed</h4>
-                <p className="text-xs text-slate-400">
-                  Added {estimatedCryptoUnits} {activeAsset.symbol} ({formatCurrency(investAmount)}) to your holdings.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

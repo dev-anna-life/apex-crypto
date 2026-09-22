@@ -270,6 +270,13 @@ export default function App() {
   const [activeTimeframe, setActiveTimeframe] = useState('24H')
   const [scrubIndex, setScrubIndex] = useState(null)
   const [priceFlash, setPriceFlash] = useState(null)
+
+  const [portfolioBalance, setPortfolioBalance] = useState(18450.00)
+  const [portfolioPnl, setPortfolioPnl] = useState(642.50)
+  const [isInvestModalOpen, setIsInvestModalOpen] = useState(false)
+  const [investAmount, setInvestAmount] = useState(500)
+  const [investStep, setInvestStep] = useState('input')
+
   const svgRef = useRef(null)
   const touchTimerRef = useRef(null)
 
@@ -373,6 +380,21 @@ export default function App() {
     }, 2000)
   }
 
+  function handleConfirmInvest() {
+    setInvestStep('processing')
+    setTimeout(() => {
+      setPortfolioBalance(prev => prev + Number(investAmount))
+      setPortfolioPnl(prev => prev + Number(investAmount) * 0.035)
+      setInvestStep('success')
+      setTimeout(() => {
+        setIsInvestModalOpen(false)
+        setInvestStep('input')
+      }, 1500)
+    }, 900)
+  }
+
+  const estimatedCryptoUnits = (Number(investAmount) / activeAsset.price).toFixed(4)
+
   return (
     <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center px-4 py-8 antialiased selection:bg-slate-800">
       <div className="w-full max-w-lg flex flex-col gap-5">
@@ -388,6 +410,33 @@ export default function App() {
             <span>Live Feed</span>
           </div>
         </header>
+
+        <section className="bg-slate-900/90 border border-white/10 rounded-3xl p-5 backdrop-blur-xl shadow-xl flex items-center justify-between relative overflow-hidden">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Portfolio Balance</span>
+            <div className="text-2xl font-extrabold text-white tracking-tight tabular-nums">
+              {formatCurrency(portfolioBalance)}
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 mt-0.5">
+              <span>▲</span>
+              <span>+{formatCurrency(portfolioPnl)}</span>
+              <span className="text-slate-500 font-normal">•</span>
+              <span className="text-emerald-400/90">+3.61% Today</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setInvestStep('input')
+                setIsInvestModalOpen(true)
+              }}
+              className="bg-gradient-to-r from-sky-400 to-sky-600 hover:from-sky-300 hover:to-sky-500 text-[#07090e] font-black text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-sky-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            >
+              Invest / Buy
+            </button>
+          </div>
+        </section>
 
         <section className="bg-slate-900/80 border border-white/10 rounded-3xl p-6 backdrop-blur-xl shadow-2xl relative overflow-hidden flex flex-col gap-4">
           <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent"></div>
@@ -565,6 +614,96 @@ export default function App() {
           })}
         </div>
       </div>
+
+      {isInvestModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/15 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col gap-4 relative">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xs font-bold text-slate-200">
+                  {activeAsset.icon}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Invest in {activeAsset.name}</h3>
+                  <p className="text-[11px] text-slate-400">Current: {formatCurrency(activeAsset.price)}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsInvestModalOpen(false)}
+                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-colors"
+              >
+                ×
+              </button>
+            </div>
+
+            {investStep === 'input' && (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Investment Amount (USD)</span>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-bold text-slate-400">$</span>
+                    <input
+                      type="number"
+                      value={investAmount}
+                      onChange={e => setInvestAmount(e.target.value)}
+                      className="w-full bg-slate-950/80 border border-white/15 rounded-2xl py-3 pl-8 pr-4 text-xl font-bold text-white focus:outline-none focus:border-sky-500/50 tabular-nums"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2">
+                  {[100, 250, 500, 1000].map(amt => (
+                    <button
+                      key={amt}
+                      onClick={() => setInvestAmount(amt)}
+                      className={`py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                        Number(investAmount) === amt
+                          ? 'bg-sky-500/20 text-sky-400 border-sky-500/40'
+                          : 'bg-white/5 text-slate-400 border-white/5 hover:text-white'
+                      }`}
+                    >
+                      ${amt}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="bg-slate-950/60 border border-white/5 rounded-2xl p-3.5 flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Estimated Allocation</span>
+                  <span className="font-bold text-white tabular-nums">
+                    ≈ {estimatedCryptoUnits} {activeAsset.symbol}
+                  </span>
+                </div>
+
+                <button
+                  onClick={handleConfirmInvest}
+                  className="w-full bg-gradient-to-r from-sky-400 to-sky-600 hover:from-sky-300 hover:to-sky-500 text-[#07090e] font-black text-sm py-3.5 rounded-2xl shadow-lg shadow-sky-500/20 transition-all hover:scale-[1.01] active:scale-[0.99] mt-1"
+                >
+                  Confirm Investment
+                </button>
+              </>
+            )}
+
+            {investStep === 'processing' && (
+              <div className="py-10 flex flex-col items-center justify-center gap-3">
+                <div className="w-10 h-10 border-3 border-sky-400/20 border-t-sky-400 rounded-full animate-spin"></div>
+                <p className="text-xs font-bold text-slate-300">Processing Investment...</p>
+              </div>
+            )}
+
+            {investStep === 'success' && (
+              <div className="py-8 flex flex-col items-center justify-center gap-2.5 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-xl font-bold">
+                  ✓
+                </div>
+                <h4 className="text-sm font-bold text-white">Investment Confirmed</h4>
+                <p className="text-xs text-slate-400">
+                  Allocated {formatCurrency(investAmount)} ({estimatedCryptoUnits} {activeAsset.symbol}) to your portfolio.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

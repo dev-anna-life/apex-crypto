@@ -8,6 +8,7 @@ const INITIAL_ASSETS = [
     name: 'Bitcoin',
     symbol: 'BTC',
     icon: 'BTC',
+    holdings: 0.1500,
     price: 64820.50,
     high: 65400.00,
     low: 63110.00,
@@ -74,6 +75,7 @@ const INITIAL_ASSETS = [
     name: 'Ethereum',
     symbol: 'ETH',
     icon: 'ETH',
+    holdings: 1.4500,
     price: 3480.25,
     high: 3520.00,
     low: 3310.00,
@@ -137,6 +139,7 @@ const INITIAL_ASSETS = [
     name: 'Solana',
     symbol: 'SOL',
     icon: 'SOL',
+    holdings: 14.2000,
     price: 152.80,
     high: 158.20,
     low: 149.00,
@@ -199,6 +202,7 @@ const INITIAL_ASSETS = [
     name: 'BNB',
     symbol: 'BNB',
     icon: 'BNB',
+    holdings: 3.5000,
     price: 588.40,
     high: 594.00,
     low: 580.20,
@@ -271,11 +275,10 @@ export default function App() {
   const [scrubIndex, setScrubIndex] = useState(null)
   const [priceFlash, setPriceFlash] = useState(null)
 
-  const [portfolioBalance, setPortfolioBalance] = useState(18450.00)
-  const [portfolioPnl, setPortfolioPnl] = useState(642.50)
   const [isInvestModalOpen, setIsInvestModalOpen] = useState(false)
   const [investAmount, setInvestAmount] = useState(500)
   const [investStep, setInvestStep] = useState('input')
+  const [recentTransactions, setRecentTransactions] = useState([])
 
   const svgRef = useRef(null)
   const touchTimerRef = useRef(null)
@@ -289,6 +292,9 @@ export default function App() {
   const themeText = isPositive ? 'text-emerald-400' : 'text-rose-400'
   const themeBg = isPositive ? 'bg-emerald-500/10' : 'bg-rose-500/10'
   const themeBorder = isPositive ? 'border-emerald-500/25' : 'border-rose-500/25'
+
+  const totalPortfolioBalance = assets.reduce((sum, coin) => sum + (coin.holdings * coin.price), 0)
+  const total24hProfit = totalPortfolioBalance * 0.034
 
   useEffect(() => {
     async function loadPrices() {
@@ -380,20 +386,41 @@ export default function App() {
     }, 2000)
   }
 
+  const estimatedCryptoUnits = Number((Number(investAmount) / activeAsset.price).toFixed(4))
+
   function handleConfirmInvest() {
     setInvestStep('processing')
     setTimeout(() => {
-      setPortfolioBalance(prev => prev + Number(investAmount))
-      setPortfolioPnl(prev => prev + Number(investAmount) * 0.035)
+      setAssets(prev => prev.map(coin => {
+        if (coin.id !== activeAsset.id) return coin
+        return {
+          ...coin,
+          holdings: Number((coin.holdings + estimatedCryptoUnits).toFixed(4))
+        }
+      }))
+
+      setRecentTransactions(prev => [
+        {
+          id: Date.now(),
+          type: 'Buy',
+          coin: activeAsset.name,
+          symbol: activeAsset.symbol,
+          amountUSD: Number(investAmount),
+          units: estimatedCryptoUnits,
+          time: 'Just now'
+        },
+        ...prev.slice(0, 2)
+      ])
+
       setInvestStep('success')
       setTimeout(() => {
         setIsInvestModalOpen(false)
         setInvestStep('input')
-      }, 1500)
+      }, 1600)
     }, 900)
   }
 
-  const estimatedCryptoUnits = (Number(investAmount) / activeAsset.price).toFixed(4)
+  const activeAssetHoldingValue = activeAsset.holdings * activeAsset.price
 
   return (
     <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center px-4 py-8 antialiased selection:bg-slate-800">
@@ -415,13 +442,13 @@ export default function App() {
           <div className="flex flex-col gap-0.5">
             <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Portfolio Balance</span>
             <div className="text-2xl font-extrabold text-white tracking-tight tabular-nums">
-              {formatCurrency(portfolioBalance)}
+              {formatCurrency(totalPortfolioBalance)}
             </div>
             <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 mt-0.5">
               <span>▲</span>
-              <span>+{formatCurrency(portfolioPnl)}</span>
+              <span>+{formatCurrency(total24hProfit)}</span>
               <span className="text-slate-500 font-normal">•</span>
-              <span className="text-emerald-400/90">+3.61% Today</span>
+              <span className="text-emerald-400/90">+3.40% Today</span>
             </div>
           </div>
 
@@ -451,9 +478,17 @@ export default function App() {
                 <p className="text-xs font-medium text-slate-400">{activeAsset.symbol} / USD</p>
               </div>
             </div>
-            <div className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 transition-colors ${themeBg} ${themeText} ${themeBorder}`}>
-              <span>{isPositive ? '▲' : '▼'}</span>
-              <span>{isPositive ? '+' : '-'}{Math.abs(currentTfData.change).toFixed(2)}%</span>
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:flex flex-col items-end">
+                <span className="text-[10px] text-slate-400 uppercase font-semibold">Your Position</span>
+                <span className="text-xs font-bold text-slate-200 tabular-nums">
+                  {activeAsset.holdings.toFixed(4)} {activeAsset.symbol} ({formatCurrency(activeAssetHoldingValue)})
+                </span>
+              </div>
+              <div className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 transition-colors ${themeBg} ${themeText} ${themeBorder}`}>
+                <span>{isPositive ? '▲' : '▼'}</span>
+                <span>{isPositive ? '+' : '-'}{Math.abs(currentTfData.change).toFixed(2)}%</span>
+              </div>
             </div>
           </div>
 
@@ -570,8 +605,21 @@ export default function App() {
           </div>
         </section>
 
+        {recentTransactions.length > 0 && (
+          <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-3.5 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-sky-400"></span>
+              <span className="text-slate-400">Recent:</span>
+              <span className="font-bold text-white">
+                Bought {recentTransactions[0].units} {recentTransactions[0].symbol} ({formatCurrency(recentTransactions[0].amountUSD)})
+              </span>
+            </div>
+            <span className="text-slate-500 font-semibold">{recentTransactions[0].time}</span>
+          </div>
+        )}
+
         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">
-          Trending Assets
+          Your Investment Portfolio
         </div>
 
         <div className="flex flex-col gap-2">
@@ -579,6 +627,7 @@ export default function App() {
             const coin24H = coin.timeframes['24H']
             const coinPositive = coin24H.change >= 0
             const isActive = coin.id === activeId
+            const coinHoldingValue = coin.holdings * coin.price
 
             return (
               <div
@@ -599,7 +648,9 @@ export default function App() {
                   </div>
                   <div>
                     <div className="text-sm font-bold text-white">{coin.name}</div>
-                    <div className="text-[11px] font-semibold text-slate-400">{coin.symbol}</div>
+                    <div className="text-[11px] font-semibold text-sky-400/90">
+                      {coin.holdings.toFixed(4)} {coin.symbol} <span className="text-slate-500">({formatCurrency(coinHoldingValue)})</span>
+                    </div>
                   </div>
                 </div>
                 <div className="text-right flex flex-col gap-0.5">
@@ -697,7 +748,7 @@ export default function App() {
                 </div>
                 <h4 className="text-sm font-bold text-white">Investment Confirmed</h4>
                 <p className="text-xs text-slate-400">
-                  Allocated {formatCurrency(investAmount)} ({estimatedCryptoUnits} {activeAsset.symbol}) to your portfolio.
+                  Added {estimatedCryptoUnits} {activeAsset.symbol} ({formatCurrency(investAmount)}) to your holdings.
                 </p>
               </div>
             )}

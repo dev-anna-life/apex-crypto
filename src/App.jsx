@@ -271,11 +271,17 @@ export default function App() {
   const [scrubIndex, setScrubIndex] = useState(null)
   const [priceFlash, setPriceFlash] = useState(null)
   const svgRef = useRef(null)
+  const touchTimerRef = useRef(null)
 
   const activeAsset = assets.find(a => a.id === activeId) || assets[0]
   const currentTfData = activeAsset.timeframes[activeTimeframe] || activeAsset.timeframes['24H']
   const currentPoints = currentTfData.data
   const isPositive = currentTfData.change >= 0
+
+  const themeColor = isPositive ? '#10b981' : '#f43f5e'
+  const themeText = isPositive ? 'text-emerald-400' : 'text-rose-400'
+  const themeBg = isPositive ? 'bg-emerald-500/10' : 'bg-rose-500/10'
+  const themeBorder = isPositive ? 'border-emerald-500/25' : 'border-rose-500/25'
 
   useEffect(() => {
     async function loadPrices() {
@@ -345,12 +351,12 @@ export default function App() {
 
   const pathD = `M ${mappedPoints.map(p => `${p.x},${p.y}`).join(' L ')}`
   const areaD = `${pathD} L ${svgWidth},${svgHeight} L 0,${svgHeight} Z`
-  const strokeColor = isPositive ? '#10b981' : '#f43f5e'
 
   const activeHoverPoint = scrubIndex !== null ? mappedPoints[scrubIndex] : null
   const displayPrice = activeHoverPoint ? activeHoverPoint.price : activeAsset.price
 
   function handleScrub(clientX) {
+    if (touchTimerRef.current) clearTimeout(touchTimerRef.current)
     if (!svgRef.current) return
     const rect = svgRef.current.getBoundingClientRect()
     const offsetX = Math.max(0, Math.min(clientX - rect.left, rect.width))
@@ -360,8 +366,15 @@ export default function App() {
     setScrubIndex(clampedIndex)
   }
 
+  function handleTouchEnd() {
+    if (touchTimerRef.current) clearTimeout(touchTimerRef.current)
+    touchTimerRef.current = setTimeout(() => {
+      setScrubIndex(null)
+    }, 2000)
+  }
+
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center px-4 py-8 antialiased selection:bg-sky-500/30">
+    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col items-center px-4 py-8 antialiased selection:bg-slate-800">
       <div className="w-full max-w-lg flex flex-col gap-5">
         <header className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2.5">
@@ -389,24 +402,20 @@ export default function App() {
                 <p className="text-xs font-medium text-slate-400">{activeAsset.symbol} / USD</p>
               </div>
             </div>
-            <div className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 transition-colors ${
-              isPositive 
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25' 
-                : 'bg-rose-500/10 text-rose-400 border-rose-500/25'
-            }`}>
-              <span>{isPositive ? '+' : '-'}</span>
-              <span>{Math.abs(currentTfData.change).toFixed(2)}%</span>
+            <div className={`px-3 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 transition-colors ${themeBg} ${themeText} ${themeBorder}`}>
+              <span>{isPositive ? '▲' : '▼'}</span>
+              <span>{isPositive ? '+' : '-'}{Math.abs(currentTfData.change).toFixed(2)}%</span>
             </div>
           </div>
 
           <div className="flex items-end justify-between">
             <div className="flex flex-col gap-0.5">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                {activeHoverPoint ? `Point in Time (${activeHoverPoint.time})` : 'Real-Time Price'}
+                {activeHoverPoint ? `Price at ${activeHoverPoint.time}` : 'Live Market Price'}
               </span>
               <div className={`text-4xl font-extrabold tracking-tight tabular-nums transition-colors duration-200 ${
                 activeHoverPoint 
-                  ? 'text-sky-400'
+                  ? themeText
                   : priceFlash === 'up' ? 'text-emerald-400' : priceFlash === 'down' ? 'text-rose-400' : 'text-white'
               }`}>
                 {formatCurrency(displayPrice)}
@@ -414,22 +423,25 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-white/5">
-              {TIMEFRAMES.map(tf => (
-                <button
-                  key={tf}
-                  onClick={() => {
-                    setActiveTimeframe(tf)
-                    setScrubIndex(null)
-                  }}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
-                    activeTimeframe === tf
-                      ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30 shadow-sm'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {tf}
-                </button>
-              ))}
+              {TIMEFRAMES.map(tf => {
+                const isTfActive = activeTimeframe === tf
+                return (
+                  <button
+                    key={tf}
+                    onClick={() => {
+                      setActiveTimeframe(tf)
+                      setScrubIndex(null)
+                    }}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                      isTfActive
+                        ? `${themeBg} ${themeText} ${themeBorder} border shadow-sm`
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {tf}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -440,7 +452,7 @@ export default function App() {
             onTouchMove={e => {
               if (e.touches[0]) handleScrub(e.touches[0].clientX)
             }}
-            onTouchEnd={() => setScrubIndex(null)}
+            onTouchEnd={handleTouchEnd}
           >
             <svg 
               ref={svgRef}
@@ -450,12 +462,12 @@ export default function App() {
             >
               <defs>
                 <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={strokeColor} stopOpacity="0.32" />
-                  <stop offset="100%" stopColor={strokeColor} stopOpacity="0" />
+                  <stop offset="0%" stopColor={themeColor} stopOpacity="0.32" />
+                  <stop offset="100%" stopColor={themeColor} stopOpacity="0" />
                 </linearGradient>
               </defs>
               <path d={areaD} fill="url(#chartGrad)" />
-              <path d={pathD} fill="none" stroke={strokeColor} strokeWidth="2.5" strokeLinecap="round" />
+              <path d={pathD} fill="none" stroke={themeColor} strokeWidth="2.5" strokeLinecap="round" />
 
               {activeHoverPoint && (
                 <g>
@@ -464,15 +476,16 @@ export default function App() {
                     y1="0" 
                     x2={activeHoverPoint.x} 
                     y2={svgHeight} 
-                    stroke="#38bdf8" 
+                    stroke={themeColor} 
                     strokeWidth="1.5" 
                     strokeDasharray="3 3" 
+                    opacity="0.85"
                   />
                   <circle 
                     cx={activeHoverPoint.x} 
                     cy={activeHoverPoint.y} 
                     r="5.5" 
-                    fill="#38bdf8" 
+                    fill={themeColor} 
                     stroke="#07090e" 
                     strokeWidth="2.5" 
                   />
@@ -482,7 +495,7 @@ export default function App() {
 
             {activeHoverPoint && (
               <div 
-                className="absolute -top-3 -translate-x-1/2 pointer-events-none bg-slate-950/95 border border-sky-500/40 text-sky-400 text-[11px] font-bold px-2 py-0.5 rounded-md shadow-xl whitespace-nowrap"
+                className={`absolute -top-3 -translate-x-1/2 pointer-events-none bg-slate-950/95 border ${themeBorder} ${themeText} text-[11px] font-bold px-2.5 py-0.5 rounded-md shadow-xl whitespace-nowrap`}
                 style={{ 
                   left: `${(activeHoverPoint.x / svgWidth) * 100}%` 
                 }}
@@ -527,7 +540,7 @@ export default function App() {
                 }}
                 className={`p-3.5 rounded-2xl border transition-all duration-200 flex items-center justify-between cursor-pointer ${
                   isActive 
-                    ? 'bg-slate-800/90 border-sky-500/40 shadow-lg shadow-sky-500/5' 
+                    ? `${coinPositive ? 'border-emerald-500/40' : 'border-rose-500/40'} bg-slate-800/90 shadow-lg` 
                     : 'bg-slate-900/60 border-white/5 hover:border-white/15 hover:bg-slate-800/50'
                 }`}
               >
@@ -542,8 +555,9 @@ export default function App() {
                 </div>
                 <div className="text-right flex flex-col gap-0.5">
                   <div className="text-sm font-bold text-white tabular-nums">{formatCurrency(coin.price)}</div>
-                  <div className={`text-xs font-bold ${coinPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {coinPositive ? '+' : ''}{coin24H.change.toFixed(2)}%
+                  <div className={`text-xs font-bold flex items-center justify-end gap-0.5 ${coinPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <span>{coinPositive ? '▲' : '▼'}</span>
+                    <span>{coinPositive ? '+' : '-'}{Math.abs(coin24H.change).toFixed(2)}%</span>
                   </div>
                 </div>
               </div>
